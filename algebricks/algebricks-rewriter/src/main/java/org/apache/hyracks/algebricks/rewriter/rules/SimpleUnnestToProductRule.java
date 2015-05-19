@@ -25,7 +25,6 @@ import java.util.Set;
 
 import org.apache.commons.lang3.mutable.Mutable;
 import org.apache.commons.lang3.mutable.MutableObject;
-
 import org.apache.hyracks.algebricks.common.exceptions.AlgebricksException;
 import org.apache.hyracks.algebricks.core.algebra.base.ILogicalExpression;
 import org.apache.hyracks.algebricks.core.algebra.base.ILogicalOperator;
@@ -97,14 +96,14 @@ public class SimpleUnnestToProductRule implements IAlgebraicRewriteRule {
                 }
             }
         } else {
-            //Move the boundary below any top const assigns
-            boundaryOpRef = opRef.getValue().getInputs().get(0);
-            while (boundaryOpRef.getValue().getOperatorTag() == LogicalOperatorTag.ASSIGN) {
-                List<LogicalVariable> opUsedVars = new ArrayList<LogicalVariable>();
-                VariableUtilities.getUsedVariables(boundaryOpRef.getValue(), opUsedVars);
-                if (opUsedVars.size() == 0) {
-                    // move down the boundary if the operator is a const assigns
-                    boundaryOpRef = boundaryOpRef.getValue().getInputs().get(0);
+            //Move the boundary below any top independent assigns
+            currentOpRef = opRef.getValue().getInputs().get(0);
+            Mutable<ILogicalOperator> otherSource = findOtherSource(currentOpRef);
+            while (currentOpRef.getValue().getOperatorTag() == LogicalOperatorTag.ASSIGN) {
+                if (opsAreIndependent(currentOpRef.getValue(), otherSource.getValue())) {
+                    // move down the boundary if the operator is independent of the tuple source 
+                    boundaryOpRef = currentOpRef.getValue().getInputs().get(0);
+                    currentOpRef = currentOpRef.getValue().getInputs().get(0);
                 } else {
                     break;
                 }
@@ -124,6 +123,17 @@ public class SimpleUnnestToProductRule implements IAlgebraicRewriteRule {
         context.computeAndSetTypeEnvironmentForOperator(opRef.getValue());
         context.computeAndSetTypeEnvironmentForOperator(join);
         return true;
+    }
+
+    private Mutable<ILogicalOperator> findOtherSource(Mutable<ILogicalOperator> start) {
+        if (start.getValue().getOperatorTag() != LogicalOperatorTag.DATASOURCESCAN
+                || start.getValue().getOperatorTag() == LogicalOperatorTag.UNNEST) {
+            return start;
+        } else {
+            Mutable<ILogicalOperator> opRef = start.getValue().getInputs().get(0);
+            return findOtherSource(opRef);
+        }
+
     }
 
     private boolean descOrSelfIsSourceScan(AbstractLogicalOperator op2) {
