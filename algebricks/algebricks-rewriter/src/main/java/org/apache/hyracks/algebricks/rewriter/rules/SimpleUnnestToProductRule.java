@@ -96,12 +96,27 @@ public class SimpleUnnestToProductRule implements IAlgebraicRewriteRule {
                     currentOpRef = currentOpRef.getValue().getInputs().get(0);
                 }
             }
+        } else {
+            //Move the boundary below any top independent assigns
+            currentOpRef = opRef.getValue().getInputs().get(0);
+            Mutable<ILogicalOperator> otherSource = findOtherSource(currentOpRef);
+            while (currentOpRef.getValue().getOperatorTag() == LogicalOperatorTag.ASSIGN) {
+                if (opsAreIndependent(currentOpRef.getValue(), otherSource.getValue())) {
+                    // move down the boundary if the operator is independent of the tuple source 
+                    boundaryOpRef = currentOpRef.getValue().getInputs().get(0);
+                    currentOpRef = currentOpRef.getValue().getInputs().get(0);
+                } else {
+                    break;
+                }
+            }
+
         }
 
         /** join the two independent branches */
         InnerJoinOperator join = new InnerJoinOperator(new MutableObject<ILogicalExpression>(ConstantExpression.TRUE),
                 new MutableObject<ILogicalOperator>(boundaryOpRef.getValue()), new MutableObject<ILogicalOperator>(
                         opRef.getValue()));
+
         opRef.setValue(join);
         ILogicalOperator ets = new EmptyTupleSourceOperator();
         boundaryOpRef.setValue(ets);
@@ -109,6 +124,17 @@ public class SimpleUnnestToProductRule implements IAlgebraicRewriteRule {
         context.computeAndSetTypeEnvironmentForOperator(opRef.getValue());
         context.computeAndSetTypeEnvironmentForOperator(join);
         return true;
+    }
+
+    private Mutable<ILogicalOperator> findOtherSource(Mutable<ILogicalOperator> start) {
+        if (start.getValue().getOperatorTag() != LogicalOperatorTag.DATASOURCESCAN
+                || start.getValue().getOperatorTag() == LogicalOperatorTag.UNNEST) {
+            return start;
+        } else {
+            Mutable<ILogicalOperator> opRef = start.getValue().getInputs().get(0);
+            return findOtherSource(opRef);
+        }
+
     }
 
     private boolean descOrSelfIsSourceScan(AbstractLogicalOperator op2) {
