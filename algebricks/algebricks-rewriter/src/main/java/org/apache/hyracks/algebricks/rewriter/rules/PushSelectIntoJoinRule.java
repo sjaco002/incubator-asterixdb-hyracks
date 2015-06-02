@@ -64,6 +64,7 @@ public class PushSelectIntoJoinRule implements IAlgebraicRewriteRule {
 
         List<ILogicalOperator> pushedOnLeft = new ArrayList<ILogicalOperator>();
         List<ILogicalOperator> pushedOnRight = new ArrayList<ILogicalOperator>();
+        List<ILogicalOperator> pushedOnEither = new ArrayList<ILogicalOperator>();
         LinkedList<ILogicalOperator> notPushedStack = new LinkedList<ILogicalOperator>();
         Collection<LogicalVariable> usedVars = new HashSet<LogicalVariable>();
         Collection<LogicalVariable> producedVars = new HashSet<LogicalVariable>();
@@ -107,7 +108,9 @@ public class PushSelectIntoJoinRule implements IAlgebraicRewriteRule {
                 } else {
                     VariableUtilities.getUsedVariables(opIter, usedVars);
                     VariableUtilities.getProducedVariables(opIter, producedVars);
-                    if (joinLiveVarsLeft.containsAll(usedVars)) {
+                    if (usedVars.size() == 0) {
+                        pushedOnEither.add(opIter);
+                    } else if (joinLiveVarsLeft.containsAll(usedVars)) {
                         pushedOnLeft.add(opIter);
                         liveInOpsToPushLeft.addAll(producedVars);
                     } else if (joinLiveVarsRight.containsAll(usedVars)) {
@@ -149,6 +152,12 @@ public class PushSelectIntoJoinRule implements IAlgebraicRewriteRule {
             return false;
         }
         if (needToPushOps) {
+            //We should push independent ops into the first branch that the selection depends on
+            if (intersectsBranch[0]) {
+                pushOps(pushedOnEither, joinBranchLeftRef, context);
+            } else {
+                pushOps(pushedOnEither, joinBranchRightRef, context);
+            }
             pushOps(pushedOnLeft, joinBranchLeftRef, context);
             pushOps(pushedOnRight, joinBranchRightRef, context);
         }
