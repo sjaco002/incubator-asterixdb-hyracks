@@ -184,9 +184,18 @@ public class IntroduceGroupByForSubplanRule implements IAlgebraicRewriteRule {
         Set<LogicalVariable> pkVars = computeGbyVars(outerNts, free, context);
         if (pkVars == null || pkVars.size() < 1) {
             // there is no non-trivial primary key, group-by keys are all live variables
+            // that were produced by descendant or self
             ILogicalOperator subplanInput = subplan.getInputs().get(0).getValue();
             pkVars = new HashSet<LogicalVariable>();
+            //get live variables
             VariableUtilities.getLiveVariables(subplanInput, pkVars);
+
+            //get produced variables
+            Set<LogicalVariable> producedVars = new HashSet<LogicalVariable>();
+            VariableUtilities.getProducedVariablesInDescendantsAndSelf(subplanInput, producedVars);
+
+            //retain the intersection
+            pkVars.retainAll(producedVars);
         }
         AlgebricksConfig.ALGEBRICKS_LOGGER.fine("Found FD for introducing group-by: " + pkVars);
 
