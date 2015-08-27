@@ -116,6 +116,10 @@ public class InlineVariablesRule implements IAlgebraicRewriteRule {
         return false;
     }
 
+    protected boolean createException(ILogicalExpression expr) {
+        return false;
+    }
+
     protected boolean inlineVariables(Mutable<ILogicalOperator> opRef, IOptimizationContext context)
             throws AlgebricksException {
         AbstractLogicalOperator op = (AbstractLogicalOperator) opRef.getValue();
@@ -130,7 +134,8 @@ public class InlineVariablesRule implements IAlgebraicRewriteRule {
                 // Ignore functions that are either in the doNotInline set or are non-functional               
                 if (expr.getExpressionTag() == LogicalExpressionTag.FUNCTION_CALL) {
                     AbstractFunctionCallExpression funcExpr = (AbstractFunctionCallExpression) expr;
-                    if (doNotInlineFuncs.contains(funcExpr.getFunctionIdentifier()) || !funcExpr.isFunctional()) {
+                    if (doNotInlineFuncs.contains(funcExpr.getFunctionIdentifier())
+                            || (!funcExpr.isFunctional() && !createException(expr))) {
                         continue;
                     }
                 }
