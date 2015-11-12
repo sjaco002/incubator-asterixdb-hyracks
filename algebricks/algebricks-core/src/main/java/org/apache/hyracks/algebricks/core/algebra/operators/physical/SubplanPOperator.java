@@ -22,7 +22,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.commons.lang3.mutable.Mutable;
-
 import org.apache.hyracks.algebricks.common.exceptions.AlgebricksException;
 import org.apache.hyracks.algebricks.common.exceptions.NotImplementedException;
 import org.apache.hyracks.algebricks.core.algebra.base.IHyracksJobBuilder;
@@ -31,6 +30,7 @@ import org.apache.hyracks.algebricks.core.algebra.base.ILogicalPlan;
 import org.apache.hyracks.algebricks.core.algebra.base.IOptimizationContext;
 import org.apache.hyracks.algebricks.core.algebra.base.PhysicalOperatorTag;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AbstractLogicalOperator;
+import org.apache.hyracks.algebricks.core.algebra.operators.logical.AbstractOperatorWithNestedPlans;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.IOperatorSchema;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.SubplanOperator;
 import org.apache.hyracks.algebricks.core.algebra.properties.ILocalStructuralProperty;
@@ -39,10 +39,12 @@ import org.apache.hyracks.algebricks.core.algebra.properties.PhysicalRequirement
 import org.apache.hyracks.algebricks.core.algebra.properties.StructuralPropertiesVector;
 import org.apache.hyracks.algebricks.core.jobgen.impl.JobGenContext;
 import org.apache.hyracks.algebricks.core.jobgen.impl.JobGenHelper;
+import org.apache.hyracks.algebricks.core.jobgen.impl.PlanCompiler;
 import org.apache.hyracks.algebricks.runtime.base.AlgebricksPipeline;
 import org.apache.hyracks.algebricks.runtime.operators.meta.SubplanRuntimeFactory;
 import org.apache.hyracks.api.dataflow.value.INullWriterFactory;
 import org.apache.hyracks.api.dataflow.value.RecordDescriptor;
+import org.apache.hyracks.api.job.JobSpecification;
 
 public class SubplanPOperator extends AbstractPhysicalOperator {
 
@@ -85,16 +87,16 @@ public class SubplanPOperator extends AbstractPhysicalOperator {
     @Override
     public void contributeRuntimeOperator(IHyracksJobBuilder builder, JobGenContext context, ILogicalOperator op,
             IOperatorSchema opSchema, IOperatorSchema[] inputSchemas, IOperatorSchema outerPlanSchema)
-            throws AlgebricksException {
+                    throws AlgebricksException {
         SubplanOperator subplan = (SubplanOperator) op;
         if (subplan.getNestedPlans().size() != 1) {
             throw new NotImplementedException("Subplan currently works only for one nested plan with one root.");
         }
-        AlgebricksPipeline[] subplans = compileSubplans(inputSchemas[0], subplan, opSchema, context);
+        AlgebricksPipeline[] subplans = compileSubplans(inputSchemas[0], subplan, opSchema, context, builder);
         assert (subplans.length == 1);
         AlgebricksPipeline np = subplans[0];
-        RecordDescriptor inputRecordDesc = JobGenHelper.mkRecordDescriptor(context.getTypeEnvironment(op.getInputs().get(0).getValue()),
-                inputSchemas[0], context);
+        RecordDescriptor inputRecordDesc = JobGenHelper.mkRecordDescriptor(
+                context.getTypeEnvironment(op.getInputs().get(0).getValue()), inputSchemas[0], context);
         INullWriterFactory[] nullWriterFactories = new INullWriterFactory[np.getOutputWidth()];
         for (int i = 0; i < nullWriterFactories.length; i++) {
             nullWriterFactories[i] = context.getNullWriterFactory();
@@ -106,6 +108,29 @@ public class SubplanPOperator extends AbstractPhysicalOperator {
 
         ILogicalOperator src = op.getInputs().get(0).getValue();
         builder.contributeGraphEdge(src, 0, op, 0);
+    }
+
+    protected AlgebricksPipeline[] compileSubplans(IOperatorSchema outerPlanSchema,
+            AbstractOperatorWithNestedPlans npOp, IOperatorSchema opSchema, JobGenContext context,
+            IHyracksJobBuilder builder) throws AlgebricksException {
+        AlgebricksPipeline[] subplans = new AlgebricksPipeline[npOp.getNestedPlans().size()];
+        PlanCompiler pc = new PlanCompiler(context);
+        int i = 0;
+        for (ILogicalPlan p : npOp.getNestedPlans()) {
+            subplans[i++] = buildPipelineWithProjection(p, outerPlanSchema, npOp, opSchema, pc, builder);
+        }
+        return subplans;
+    }
+
+    private AlgebricksPipeline buildPipelineWithProjection(ILogicalPlan p, IOperatorSchema outerPlanSchema,
+            AbstractOperatorWithNestedPlans npOp, IOperatorSchema opSchema, PlanCompiler pc, IHyracksJobBuilder builder)
+                    throws AlgebricksException {
+        if (p.getRoots().size() > 1) {
+            throw new NotImplementedException("Nested plans with several roots are not supported.");
+        }
+        JobSpecification nestedJob = pc.compilePlan(p, outerPlanSchema,
+                builder.getJobSpec().getJobletEventListenerFactory());
+        return getPipeline(p, opSchema, pc, nestedJob);
     }
 
     @Override

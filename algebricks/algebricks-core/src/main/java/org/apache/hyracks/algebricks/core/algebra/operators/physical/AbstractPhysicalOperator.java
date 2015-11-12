@@ -70,7 +70,8 @@ public abstract class AbstractPhysicalOperator implements IPhysicalOperator {
     }
 
     protected PhysicalRequirements emptyUnaryRequirements() {
-        StructuralPropertiesVector[] req = new StructuralPropertiesVector[] { StructuralPropertiesVector.EMPTY_PROPERTIES_VECTOR };
+        StructuralPropertiesVector[] req = new StructuralPropertiesVector[] {
+                StructuralPropertiesVector.EMPTY_PROPERTIES_VECTOR };
         return new PhysicalRequirements(req, IPartitioningRequirementsCoordinator.NO_COORDINATION);
     }
 
@@ -103,7 +104,8 @@ public abstract class AbstractPhysicalOperator implements IPhysicalOperator {
         return new Pair<int[], int[]>(inputDependencyLabels, outputDependencyLabels);
     }
 
-    protected void contributeOpDesc(IHyracksJobBuilder builder, AbstractLogicalOperator op, IOperatorDescriptor opDesc) {
+    protected void contributeOpDesc(IHyracksJobBuilder builder, AbstractLogicalOperator op,
+            IOperatorDescriptor opDesc) {
         if (op.getExecutionMode() == ExecutionMode.UNPARTITIONED) {
             AlgebricksPartitionConstraint apc = new AlgebricksCountPartitionConstraint(1);
             builder.contributeAlgebricksPartitionConstraint(opDesc, apc);
@@ -113,22 +115,27 @@ public abstract class AbstractPhysicalOperator implements IPhysicalOperator {
 
     protected AlgebricksPipeline[] compileSubplans(IOperatorSchema outerPlanSchema,
             AbstractOperatorWithNestedPlans npOp, IOperatorSchema opSchema, JobGenContext context)
-            throws AlgebricksException {
+                    throws AlgebricksException {
         AlgebricksPipeline[] subplans = new AlgebricksPipeline[npOp.getNestedPlans().size()];
         PlanCompiler pc = new PlanCompiler(context);
         int i = 0;
         for (ILogicalPlan p : npOp.getNestedPlans()) {
-            subplans[i++] = buildPipelineWithProjection(p, outerPlanSchema, npOp, opSchema, pc);
+            subplans[i++] = buildPipelineWithProjection(p, outerPlanSchema, opSchema, pc);
         }
         return subplans;
     }
 
     private AlgebricksPipeline buildPipelineWithProjection(ILogicalPlan p, IOperatorSchema outerPlanSchema,
-            AbstractOperatorWithNestedPlans npOp, IOperatorSchema opSchema, PlanCompiler pc) throws AlgebricksException {
+            IOperatorSchema opSchema, PlanCompiler pc) throws AlgebricksException {
         if (p.getRoots().size() > 1) {
             throw new NotImplementedException("Nested plans with several roots are not supported.");
         }
         JobSpecification nestedJob = pc.compilePlan(p, outerPlanSchema, null);
+        return getPipeline(p, opSchema, pc, nestedJob);
+    }
+
+    protected AlgebricksPipeline getPipeline(ILogicalPlan p, IOperatorSchema opSchema, PlanCompiler pc,
+            JobSpecification nestedJob) throws AlgebricksException {
         ILogicalOperator topOpInSubplan = p.getRoots().get(0).getValue();
         JobGenContext context = pc.getContext();
         IOperatorSchema topOpInSubplanScm = context.getSchema(topOpInSubplan);
@@ -136,10 +143,8 @@ public abstract class AbstractPhysicalOperator implements IPhysicalOperator {
 
         Map<OperatorDescriptorId, IOperatorDescriptor> opMap = nestedJob.getOperatorMap();
         if (opMap.size() != 1) {
-            throw new AlgebricksException(
-                    "Attempting to construct a nested plan with "
-                            + opMap.size()
-                            + " operator descriptors. Currently, nested plans can only consist in linear pipelines of Asterix micro operators.");
+            throw new AlgebricksException("Attempting to construct a nested plan with " + opMap.size()
+                    + " operator descriptors. Currently, nested plans can only consist in linear pipelines of Asterix micro operators.");
         }
 
         for (OperatorDescriptorId oid : opMap.keySet()) {
