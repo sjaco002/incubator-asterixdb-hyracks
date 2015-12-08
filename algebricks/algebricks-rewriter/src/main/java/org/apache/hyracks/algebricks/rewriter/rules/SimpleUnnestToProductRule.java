@@ -113,11 +113,12 @@ public class SimpleUnnestToProductRule implements IAlgebraicRewriteRule {
 
         /** join the two independent branches */
         InnerJoinOperator join = new InnerJoinOperator(new MutableObject<ILogicalExpression>(ConstantExpression.TRUE),
-                new MutableObject<ILogicalOperator>(boundaryOpRef.getValue()), new MutableObject<ILogicalOperator>(
-                        opRef.getValue()));
+                new MutableObject<ILogicalOperator>(boundaryOpRef.getValue()),
+                new MutableObject<ILogicalOperator>(opRef.getValue()));
 
         opRef.setValue(join);
         ILogicalOperator ets = new EmptyTupleSourceOperator();
+        context.computeAndSetTypeEnvironmentForOperator(ets);
         boundaryOpRef.setValue(ets);
         context.computeAndSetTypeEnvironmentForOperator(boundaryOpRef.getValue());
         context.computeAndSetTypeEnvironmentForOperator(opRef.getValue());
